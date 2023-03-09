@@ -3278,6 +3278,48 @@ class TestClient(unittest.TestCase):
 
         self.assertIn("Expected an instance of LoadJobConfig", exc.exception.args[0])
 
+    def test_load_table_from_uri_w_job_config(self):
+        from google.cloud.bigquery.job import LoadJob, LoadJobConfig
+
+        JOB = "job_name"
+        DESTINATION = "destination_table"
+        SOURCE_URI = "http://example.com/source.csv"
+        RESOURCE = {
+            "jobReference": {"projectId": self.PROJECT, "jobId": JOB},
+            "configuration": {
+                "load": {
+                    "sourceUris": [SOURCE_URI],
+                    "destinationTable": {
+                        "projectId": self.PROJECT,
+                        "datasetId": self.DS_ID,
+                        "tableId": DESTINATION,
+                    },
+                    "create_session": True,
+                }
+            },
+        }
+
+        creds = _make_credentials()
+        http = object()
+        job_config = LoadJobConfig()
+        job_config.create_session = False
+
+        client = self._make_one(project=self.PROJECT, credentials=creds, _http=http)
+        conn = client._connection = make_connection(RESOURCE)
+        destination = DatasetReference(self.PROJECT, self.DS_ID).table(DESTINATION)
+
+        job = client.load_table_from_uri(
+            SOURCE_URI, destination, job_id=JOB, job_config=job_config
+        )
+
+        # Check that load_table_from_uri actually starts the job.
+        conn.api_request.assert_called_once_with(
+            method="POST",
+            path="/projects/%s/jobs" % self.PROJECT,
+            data=RESOURCE,
+            timeout=DEFAULT_TIMEOUT,
+        )
+
     @staticmethod
     def _mock_requests_response(status_code, headers, content=b""):
         return mock.Mock(
