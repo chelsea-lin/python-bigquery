@@ -239,6 +239,31 @@ class TestClient(unittest.TestCase):
         self.assertIsInstance(client._default_query_job_config, QueryJobConfig)
         self.assertTrue(client._default_query_job_config.dry_run)
 
+    def test_ctor_w_load_job_config(self):
+        from google.cloud.bigquery._http import Connection
+        from google.cloud.bigquery import LoadJobConfig
+
+        creds = _make_credentials()
+        http = object()
+        location = "us-central"
+        job_config = LoadJobConfig()
+        job_config.create_session = True
+
+        client = self._make_one(
+            project=self.PROJECT,
+            credentials=creds,
+            _http=http,
+            location=location,
+            default_load_job_config=job_config,
+        )
+        self.assertIsInstance(client._connection, Connection)
+        self.assertIs(client._connection.credentials, creds)
+        self.assertIs(client._connection.http, http)
+        self.assertEqual(client.location, location)
+
+        self.assertIsInstance(client._default_load_job_config, LoadJobConfig)
+        self.assertTrue(client._default_load_job_config.create_session)
+
     def test__call_api_applying_custom_retry_on_timeout(self):
         from concurrent.futures import TimeoutError
         from google.cloud.bigquery.retry import DEFAULT_RETRY
@@ -425,6 +450,19 @@ class TestClient(unittest.TestCase):
         job_config.dry_run = True
         client.default_query_job_config = job_config
         self.assertIsInstance(client.default_query_job_config, QueryJobConfig)
+
+    def test_default_load_job_config(self):
+        from google.cloud.bigquery import LoadJobConfig
+
+        creds = _make_credentials()
+        http = object()
+        client = self._make_one(project=self.PROJECT, credentials=creds, _http=http)
+        self.assertIsNone(client.default_load_job_config)
+
+        job_config = LoadJobConfig()
+        job_config.create_session = True
+        client.default_load_job_config = job_config
+        self.assertIsInstance(client.default_load_job_config, LoadJobConfig)
 
     def test_get_service_account_email(self):
         path = "/projects/%s/serviceAccount" % (self.PROJECT,)
@@ -3264,11 +3302,25 @@ class TestClient(unittest.TestCase):
         JOB = "job_name"
         DESTINATION = "destination_table"
         SOURCE_URI = "http://example.com/source.csv"
+        RESOURCE = {
+            "jobReference": {"projectId": self.PROJECT, "jobId": JOB},
+            "configuration": {
+                "load": {
+                    "sourceUris": [SOURCE_URI],
+                    "destinationTable": {
+                        "projectId": self.PROJECT,
+                        "datasetId": self.DS_ID,
+                        "tableId": DESTINATION,
+                    },
+                }
+            },
+        }
 
         creds = _make_credentials()
         http = object()
         job_config = job.CopyJobConfig()
         client = self._make_one(project=self.PROJECT, credentials=creds, _http=http)
+        conn = client._connection = make_connection(RESOURCE)
         destination = DatasetReference(self.PROJECT, self.DS_ID).table(DESTINATION)
 
         with self.assertRaises(TypeError) as exc:
@@ -3277,6 +3329,49 @@ class TestClient(unittest.TestCase):
             )
 
         self.assertIn("Expected an instance of LoadJobConfig", exc.exception.args[0])
+
+    def test_load_table_from_uri_w_job_config(self):
+        from google.cloud.bigquery.job import LoadJob, LoadJobConfig
+
+        JOB = "job_name"
+        DESTINATION = "destination_table"
+        SOURCE_URI = "http://example.com/source.csv"
+        RESOURCE = {
+            "jobReference": {"projectId": self.PROJECT, "jobId": JOB},
+            "configuration": {
+                "load": {
+                    "sourceUris": [SOURCE_URI],
+                    "destinationTable": {
+                        "projectId": self.PROJECT,
+                        "datasetId": self.DS_ID,
+                        "tableId": DESTINATION,
+                    },
+                    # "create_session": True,
+                }
+            },
+        }
+
+        creds = _make_credentials()
+        http = object()
+        job_config = LoadJobConfig()
+        # job_config.create_session = True
+        job_config.encoding = "UTF-8"
+
+        client = self._make_one(project=self.PROJECT, credentials=creds, _http=http)
+        conn = client._connection = make_connection(RESOURCE)
+        destination = DatasetReference(self.PROJECT, self.DS_ID).table(DESTINATION)
+
+        job = client.load_table_from_uri(
+            SOURCE_URI, destination, job_id=JOB, job_config=job_config
+        )
+
+        # Check that load_table_from_uri actually starts the job.
+        conn.api_request.assert_called_once_with(
+            method="POST",
+            path="/projects/%s/jobs" % self.PROJECT,
+            data=RESOURCE,
+            # timeout=DEFAULT_TIMEOUT,
+        )
 
     @staticmethod
     def _mock_requests_response(status_code, headers, content=b""):

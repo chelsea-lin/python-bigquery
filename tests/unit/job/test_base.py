@@ -1082,7 +1082,7 @@ class Test_JobConfig(unittest.TestCase):
             config = self._make_one()
             config.wrong_name = None
 
-    def test_fill_from_default(self):
+    def test_fill_query_job_config_from_default(self):
         from google.cloud.bigquery import QueryJobConfig
 
         job_config = QueryJobConfig()
@@ -1097,6 +1097,22 @@ class Test_JobConfig(unittest.TestCase):
         self.assertTrue(final_job_config.dry_run)
         self.assertTrue(final_job_config.use_query_cache)
         self.assertEqual(final_job_config.maximum_bytes_billed, 1000)
+
+    def test_fill_load_job_from_default(self):
+        from google.cloud.bigquery import LoadJobConfig
+
+        job_config = LoadJobConfig()
+        job_config.create_session = True
+        job_config.encoding = "UTF-8"
+
+        default_job_config = LoadJobConfig()
+        default_job_config.ignore_unknown_values = True
+        default_job_config.encoding = "ISO-8859-1"
+
+        final_job_config = job_config._fill_from_default(default_job_config)
+        self.assertTrue(final_job_config.create_session)
+        self.assertTrue(final_job_config.ignore_unknown_values)
+        self.assertEqual(final_job_config.encoding, "UTF-8")
 
     def test_fill_from_default_conflict(self):
         from google.cloud.bigquery import QueryJobConfig

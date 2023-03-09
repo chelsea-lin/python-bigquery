@@ -210,6 +210,9 @@ class Client(ClientWithProject):
         default_query_job_config (Optional[google.cloud.bigquery.job.QueryJobConfig]):
             Default ``QueryJobConfig``.
             Will be merged into job configs passed into the ``query`` method.
+        default_load_job_config (Optional[google.cloud.bigquery.job.LoadJobConfig]):
+            Default ``LoadJobConfig``.
+            Will be merged into job configs passed into the ``load_table_*`` methods.
         client_info (Optional[google.api_core.client_info.ClientInfo]):
             The client info used to send a user-agent string along with API
             requests. If ``None``, then default info will be used. Generally,
@@ -235,6 +238,7 @@ class Client(ClientWithProject):
         _http=None,
         location=None,
         default_query_job_config=None,
+        default_load_job_config=None,
         client_info=None,
         client_options=None,
     ) -> None:
@@ -260,6 +264,7 @@ class Client(ClientWithProject):
         self._connection = Connection(self, **kw_args)
         self._location = location
         self._default_query_job_config = copy.deepcopy(default_query_job_config)
+        self._default_load_job_config = copy.deepcopy(default_load_job_config)
 
     @property
     def location(self):
@@ -276,6 +281,17 @@ class Client(ClientWithProject):
     @default_query_job_config.setter
     def default_query_job_config(self, value: QueryJobConfig):
         self._default_query_job_config = copy.deepcopy(value)
+
+    @property
+    def default_load_job_config(self):
+        """Default ``LoadJobConfig``.
+        Will be merged into job configs passed into the ``load_table_*`` methods.
+        """
+        return self._default_load_job_config
+
+    @default_load_job_config.setter
+    def default_load_job_config(self, value: LoadJobConfig):
+        self._default_load_job_config = copy.deepcopy(value)
 
     def close(self):
         """Close the underlying transport objects, releasing system resources.
@@ -2355,9 +2371,22 @@ class Client(ClientWithProject):
 
         destination = _table_arg_to_table_ref(destination, default_project=self.project)
 
+        # Make a copy so that the job config isn't modified in-place.
         if job_config:
-            job_config = copy.deepcopy(job_config)
             _verify_job_config_type(job_config, google.cloud.bigquery.job.LoadJobConfig)
+            job_config = copy.deepcopy(job_config)
+        else:
+            job_config = job.LoadJobConfig()
+        
+        # Merge this job config with a default job config
+        if self._default_load_job_config:
+            _verify_job_config_type(
+                self._default_load_job_config,
+                google.cloud.bigquery.job.LoadJobConfig
+            )
+            job_config = job_config._fill_from_default(
+                self._default_load_job_config
+            )
 
         load_job = job.LoadJob(job_ref, source_uris, destination, self, job_config)
         load_job._begin(retry=retry, timeout=timeout)
@@ -2447,6 +2476,24 @@ class Client(ClientWithProject):
         if job_config:
             job_config = copy.deepcopy(job_config)
             _verify_job_config_type(job_config, google.cloud.bigquery.job.LoadJobConfig)
+
+        # # Make a copy so that the job config isn't modified in-place.
+        # if job_config:
+        #     _verify_job_config_type(job_config, google.cloud.bigquery.job.LoadJobConfig)
+        #     job_config = copy.deepcopy(job_config)
+        # else:
+        #     job_config = job.LoadJobConfig()
+        
+        # # Merge this job config with a default job config
+        # if self._default_load_job_config:
+        #     _verify_job_config_type(
+        #         self._default_load_job_config,
+        #         google.cloud.bigquery.job.LoadJobConfig
+        #     )
+        #     job_config = job_config._fill_from_default(
+        #         self._default_load_job_config
+        #     )
+
         load_job = job.LoadJob(job_ref, None, destination, self, job_config)
         job_resource = load_job.to_api_repr()
 
