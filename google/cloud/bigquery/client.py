@@ -210,6 +210,9 @@ class Client(ClientWithProject):
         default_query_job_config (Optional[google.cloud.bigquery.job.QueryJobConfig]):
             Default ``QueryJobConfig``.
             Will be merged into job configs passed into the ``query`` method.
+        default_load_job_config (Optional[google.cloud.bigquery.job.LoadJobConfig]):
+            Default ``LoadJobConfig``.
+            Will be merged into job configs passed into the ``load_table_*`` methods.
         client_info (Optional[google.api_core.client_info.ClientInfo]):
             The client info used to send a user-agent string along with API
             requests. If ``None``, then default info will be used. Generally,
@@ -235,6 +238,7 @@ class Client(ClientWithProject):
         _http=None,
         location=None,
         default_query_job_config=None,
+        default_load_job_config=None,
         client_info=None,
         client_options=None,
     ) -> None:
@@ -260,6 +264,7 @@ class Client(ClientWithProject):
         self._connection = Connection(self, **kw_args)
         self._location = location
         self._default_query_job_config = copy.deepcopy(default_query_job_config)
+        self._default_load_job_config = copy.deepcopy(default_load_job_config)
 
     @property
     def location(self):
@@ -276,6 +281,17 @@ class Client(ClientWithProject):
     @default_query_job_config.setter
     def default_query_job_config(self, value: QueryJobConfig):
         self._default_query_job_config = copy.deepcopy(value)
+
+    @property
+    def default_load_job_config(self):
+        """Default ``LoadJobConfig``.
+        Will be merged into job configs passed into the ``load_table_*`` methods.
+        """
+        return self._default_load_job_config
+
+    @default_load_job_config.setter
+    def default_load_job_config(self, value: LoadJobConfig):
+        self._default_load_job_config = copy.deepcopy(value)
 
     def close(self):
         """Close the underlying transport objects, releasing system resources.
@@ -2330,8 +2346,8 @@ class Client(ClientWithProject):
 
         Raises:
             TypeError:
-                If ``job_config`` is not an instance of :class:`~google.cloud.bigquery.job.LoadJobConfig`
-                class.
+                If ``job_config`` is not an instance of
+                :class:`~google.cloud.bigquery.job.LoadJobConfig` class.
         """
         job_id = _make_job_id(job_id, job_id_prefix)
 
@@ -2349,8 +2365,10 @@ class Client(ClientWithProject):
         destination = _table_arg_to_table_ref(destination, default_project=self.project)
 
         if job_config:
-            job_config = copy.deepcopy(job_config)
-            _verify_job_config_type(job_config, google.cloud.bigquery.job.LoadJobConfig)
+            _verify_job_config_type(job_config, LoadJobConfig)
+        else:
+            job_config = job.LoadJobConfig()
+        job_config = job_config._fill_from_default(self._default_load_job_config)
 
         load_job = job.LoadJob(job_ref, source_uris, destination, self, job_config)
         load_job._begin(retry=retry, timeout=timeout)
@@ -2424,8 +2442,8 @@ class Client(ClientWithProject):
                 mode.
 
             TypeError:
-                If ``job_config`` is not an instance of :class:`~google.cloud.bigquery.job.LoadJobConfig`
-                class.
+                If ``job_config`` is not an instance of
+                :class:`~google.cloud.bigquery.job.LoadJobConfig` class.
         """
         job_id = _make_job_id(job_id, job_id_prefix)
 
@@ -2437,9 +2455,13 @@ class Client(ClientWithProject):
 
         destination = _table_arg_to_table_ref(destination, default_project=self.project)
         job_ref = job._JobReference(job_id, project=project, location=location)
+
         if job_config:
-            job_config = copy.deepcopy(job_config)
-            _verify_job_config_type(job_config, google.cloud.bigquery.job.LoadJobConfig)
+            _verify_job_config_type(job_config, LoadJobConfig)
+        else:
+            job_config = job.LoadJobConfig()
+        job_config = job_config._fill_from_default(self._default_load_job_config)
+
         load_job = job.LoadJob(job_ref, None, destination, self, job_config)
         job_resource = load_job.to_api_repr()
 
@@ -2564,20 +2586,16 @@ class Client(ClientWithProject):
                 If a usable parquet engine cannot be found. This method
                 requires :mod:`pyarrow` to be installed.
             TypeError:
-                If ``job_config`` is not an instance of :class:`~google.cloud.bigquery.job.LoadJobConfig`
-                class.
+                If ``job_config`` is not an instance of
+                :class:`~google.cloud.bigquery.job.LoadJobConfig` class.
         """
         job_id = _make_job_id(job_id, job_id_prefix)
 
         if job_config:
-            _verify_job_config_type(job_config, google.cloud.bigquery.job.LoadJobConfig)
-            # Make a copy so that the job config isn't modified in-place.
-            job_config_properties = copy.deepcopy(job_config._properties)
-            job_config = job.LoadJobConfig()
-            job_config._properties = job_config_properties
-
+            _verify_job_config_type(job_config, LoadJobConfig)
         else:
             job_config = job.LoadJobConfig()
+        job_config = job_config._fill_from_default(self._default_load_job_config)
 
         supported_formats = {job.SourceFormat.CSV, job.SourceFormat.PARQUET}
         if job_config.source_format is None:
@@ -2791,17 +2809,16 @@ class Client(ClientWithProject):
 
         Raises:
             TypeError:
-                If ``job_config`` is not an instance of :class:`~google.cloud.bigquery.job.LoadJobConfig`
-                class.
+                If ``job_config`` is not an instance of
+                :class:`~google.cloud.bigquery.job.LoadJobConfig` class.
         """
         job_id = _make_job_id(job_id, job_id_prefix)
 
         if job_config:
-            _verify_job_config_type(job_config, google.cloud.bigquery.job.LoadJobConfig)
-            # Make a copy so that the job config isn't modified in-place.
-            job_config = copy.deepcopy(job_config)
+            _verify_job_config_type(job_config, LoadJobConfig)
         else:
             job_config = job.LoadJobConfig()
+        job_config = job_config._fill_from_default(self._default_load_job_config)
 
         job_config.source_format = job.SourceFormat.NEWLINE_DELIMITED_JSON
 
